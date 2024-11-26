@@ -1,0 +1,39 @@
+# Ignore all .log files
+*.log
+
+# Ignore the entire temp directory
+temp/
+
+# Ignore .class files
+*.class
+
+# Ignore .env files
+.env
+
+# Ignore virtual enviroments
+venv
+.venv
+
+# Ignore node_modules directory
+node_modules/
+
+# Ignore build output directory
+/build
+
+# Ignore IDE-specific files
+.vscode/
+.idea/
+
+# Ignore compiled Python files
+*.pyc
+__pycache__/
+
+# Ignore macOS system files
+.DS_Store
+
+# Ignore npm debug log
+npm-debug.log*
+
+# Ignore all files in the dist directory except .gitkeep
+dist/*
+!dist/.gitkeep
