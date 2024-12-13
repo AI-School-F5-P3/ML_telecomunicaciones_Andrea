@@ -37,37 +37,37 @@ def perform_pca(df, numeric_features):
     plt.ylabel('Cumulative explained variance')
     plt.show()
 
-def prepare_data(df, numeric_features, categorical_features):
+def prepare_data(df, numeric_features, categorical_features, n_components=None):
     X = df.drop('custcat', axis=1)
     y = df['custcat']
     print("Features used for training:", numeric_features)
 
-    # Ensure categorical features exist in the data
+    # Validate categorical features
     available_categorical_features = [col for col in categorical_features if col in X.columns]
-    print("Validated categorical features:", available_categorical_features)
 
+    # Create preprocessor with PCA included
+    numeric_transformer = Pipeline(steps=[
+        ('scaler', StandardScaler()),
+        ('pca', PCA(n_components=n_components))
+    ])
+    
     preprocessor = ColumnTransformer(
         transformers=[
-            ('num', StandardScaler(), numeric_features),
+            ('num', numeric_transformer, numeric_features),
             ('cat', OneHotEncoder(drop='first'), available_categorical_features)
-        ])
+        ]
+    )
     
-    # Fit the preprocessor to get the correct feature names
+    # Transform the data and handle SMOTE
     X_encoded = preprocessor.fit_transform(X)
-    feature_names = (numeric_features + 
-                     list(preprocessor.named_transformers_['cat']
-                     .get_feature_names_out(available_categorical_features)))
+    feature_names = (list(preprocessor.named_transformers_['num']['pca'].get_feature_names_out(numeric_features)) +
+                     list(preprocessor.named_transformers_['cat'].get_feature_names_out(available_categorical_features)))
     
-    # Convert to DataFrame with correct column names before SMOTE
     X_encoded_df = pd.DataFrame(X_encoded, columns=feature_names, index=X.index)
-    
-    # Get indices of categorical features for SMOTENC
     cat_indices = list(range(len(numeric_features), X_encoded.shape[1]))
     smote_nc = SMOTENC(categorical_features=cat_indices, random_state=42)
-    
     X_resampled, y_resampled = smote_nc.fit_resample(X_encoded_df, y)
     
-    # Convert back to DataFrame with proper column names
     X_resampled = pd.DataFrame(X_resampled, columns=feature_names)
     y_resampled = pd.Series(y_resampled, name='custcat')
     
@@ -180,16 +180,39 @@ def train_best_model(study, X_train, y_train, preprocessor):
     best_model.fit(X_train, y_train)
     return best_model
 
-def save_model(model, model_name, directory='models'):
+def save_model(preprocessor, model, model_name, directory='models'):
     # Ensure the directory exists
     models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), directory)
     os.makedirs(models_dir, exist_ok=True)
     
-    # Save the model as a pickle file
+    # Save both the preprocessor and model
+    model_data = {'preprocessor': preprocessor, 'model': model}
     model_path = os.path.join(models_dir, f"{model_name}.pkl")
     with open(model_path, 'wb') as file:
-        pickle.dump(model, file)
-    print(f"Model '{model_name}' saved at {model_path}")
+        pickle.dump(model_data, file)
+    print(f"Model '{model_name}' and preprocessor saved at {model_path}")
+
+def load_model(model_name, directory='models'):
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), directory, f"{model_name}.pkl")
+    with open(model_path, 'rb') as file:
+        model_data = pickle.load(file)
+    return model_data['model'], model_data['preprocessor']
+
+def predict_new_input(input_data, model_name, directory='models'):
+    # Load the model and preprocessor
+    model, preprocessor = load_model(model_name, directory)
+    
+    # Convert input data to a DataFrame
+    input_df = pd.DataFrame([input_data]) 
+    
+    # Preprocess the input data
+    preprocessed_input = preprocessor.transform(input_df)
+    
+    # Make predictions
+    prediction = model.predict(preprocessed_input)
+    prediction_proba = model.predict_proba(preprocessed_input) if hasattr(model, 'predict_proba') else None
+
+    return prediction, prediction_proba
 
 def main():
     # Load the data
@@ -197,6 +220,7 @@ def main():
     
     # Define numeric and categorical features (as present in the original dataset)
     numeric_features = ['tenure', 'age', 'address', 'income', 'employ', 'reside']
+
     categorical_features = ['region', 'marital', 'ed', 'retire', 'gender']
     
     # Perform PCA 
@@ -240,8 +264,8 @@ def main():
         model.fit(X_train, y_train)
         evaluate_model(model, X_train, y_train, X_test, y_test)
         
-        # Save the trained model
-        save_model(model, name, directory='models')
+        # Save the trained model along with the preprocessor
+        save_model(preprocessor, model, name, directory='models')
     
     # Modify train_best_model function as well
     def train_best_model(study, X_train, y_train, preprocessor):

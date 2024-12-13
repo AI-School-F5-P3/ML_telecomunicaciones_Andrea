@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+import joblib
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support, balanced_accuracy_score
 
 # Set Streamlit Page Configuration
@@ -13,11 +14,11 @@ st.set_page_config(
 
 # Load Models
 @st.cache_resource
-def load_model():
-    model_path = "src/models/Random_Forest.pkl"
+def load_model(model_name, directory='models'):
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), directory, f"{model_name}.pkl")
     with open(model_path, 'rb') as file:
-        model = pickle.load(file)
-    return model
+        model_data = pickle.load(file)
+    return model_data['model'], model_data['preprocessor']
 
 # Home Page
 def home_page():
@@ -78,35 +79,54 @@ def metrics_page():
 
 # Prediction Page
 def prediction_page():
-    st.title("Make Predictions")
-    st.write("Use the form below to input customer data and predict their segment.")
-    
-    # Input fields for user data
-    tenure = st.number_input("Tenure (years):", min_value=0, max_value=50, step=1)
-    age = st.number_input("Age:", min_value=18, max_value=100, step=1)
-    address = st.number_input("Address (years at residence):", min_value=0, max_value=50, step=1)
-    income = st.number_input("Income (annual):", min_value=0, step=1000)
-    employ = st.number_input("Employment (years):", min_value=0, max_value=50, step=1)
-    reside = st.number_input("Reside (years in current area):", min_value=0, max_value=50, step=1)
-    region = st.selectbox("Region:", [0, 1, 2, 3])  # Example values for one-hot encoded regions
-    marital = st.selectbox("Marital Status:", [0, 1])  # Example values for one-hot encoded marital status
-    ed = st.selectbox("Education Level:", [0, 1, 2, 3])  # Example values for one-hot encoded education levels
-    retire = st.selectbox("Retire Status:", [0, 1])
-    gender = st.selectbox("Gender:", [0, 1])  # Example values for one-hot encoded gender
-    
-    # Predict button
-    if st.button("Predict"):
-        # Prepare the input data
-        input_data = np.array([[tenure, age, address, income, employ, reside, region, marital, ed, retire, gender]])
+    # Load the preprocessor and the Random Forest model (done once for efficiency)
+    preprocessor = joblib.load('models/preprocessor.pkl')
+    rf_model = joblib.load('models/Random_Forest_For_Streamlit.pkl')
+
+    # Define the prediction function
+    def predict_customer_category(data):
+        processed_data = preprocessor.transform(data)
+        prediction = rf_model.predict(processed_data)
+        return prediction
+
+    # Streamlit UI
+    st.title("Customer Category Prediction")
+    st.write("Use this app to predict customer categories based on input features.")
+
+    # Input form
+    with st.form("prediction_form"):
+        tenure = st.number_input("Tenure", min_value=0)
+        age = st.number_input("Age", min_value=0)
+        address = st.number_input("Address Years", min_value=0)
+        income = st.number_input("Income", min_value=0)
+        employ = st.number_input("Years Employed", min_value=0)
+        reside = st.number_input("Years Resided", min_value=0)
+        region = st.selectbox("Region", ['1', '2', '3', '4'])
+        marital = st.selectbox("Marital Status", ['Single', 'Married'])
+        ed = st.selectbox("Education Level", ['1', '2', '3', '4'])
+        retire = st.selectbox("Retire", ['0', '1'])
+        gender = st.selectbox("Gender", ['Male', 'Female'])
+        submitted = st.form_submit_button("Predict")
         
-        # Load the best model
-        best_model = load_model()
-        
-        # Make prediction
-        prediction = best_model.predict(input_data)
-        
-        # Display prediction
-        st.write(f"Predicted Customer Segment: **{prediction[0]}**")
+        if submitted:
+            # Create DataFrame with input values
+            input_data = pd.DataFrame({
+                'tenure': [tenure],
+                'age': [age],
+                'address': [address],
+                'income': [income],
+                'employ': [employ],
+                'reside': [reside],
+                'region': [region],
+                'marital': [marital],
+                'ed': [ed],
+                'retire': [retire],
+                'gender': [gender]
+            })
+            
+            # Perform prediction
+            prediction = predict_customer_category(input_data)
+            st.write("Predicted Customer Category:", prediction[0])
 
 # App Navigation
 page = st.sidebar.selectbox(
